@@ -48,7 +48,7 @@ class SwingDataPoints {
     }
     
     func searchContinuityAboveValue(_ data: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ threshold: Float, _ winLength: Int) -> Int? {
-        if swingDataPoints.count == 0  || indexBegin < 0 || indexEnd >= swingDataPoints.count || indexBegin > indexEnd || (indexEnd - indexBegin + 1) < winLength {
+        if swingDataPoints.count == 0  || indexBegin < 0 || indexEnd >= swingDataPoints.count || indexBegin > indexEnd || (indexEnd - indexBegin + 1) < winLength || winLength <= 0 {
             return nil
         }
 
@@ -77,7 +77,7 @@ class SwingDataPoints {
     }
     
     func backSearchContinuityWithinRange(_ data: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ thresholdLo: Float, _ thresholdHi: Float, _ winLength: Int) -> Int? {
-        if swingDataPoints.count == 0  || indexBegin < 0 || indexEnd >= swingDataPoints.count || indexBegin <= indexEnd || (indexBegin - indexEnd + 1) < winLength {
+        if swingDataPoints.count == 0  || indexBegin < 0 || indexEnd >= swingDataPoints.count || indexBegin <= indexEnd || (indexBegin - indexEnd + 1) < winLength || winLength <= 0 || thresholdLo >= thresholdHi {
             return nil
         }
         
@@ -106,7 +106,7 @@ class SwingDataPoints {
     }
     
     func searchContinuityAboveValueTwoSignals(_ data1: SensorValue, _ data2: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ threshold1: Float, _ threshold2: Float, _ winLength: Int) -> Int? {
-        if swingDataPoints.count == 0  || indexBegin < 0 || indexEnd >= swingDataPoints.count || indexBegin > indexEnd || (indexEnd - indexBegin + 1) < winLength {
+        if swingDataPoints.count == 0  || indexBegin < 0 || indexEnd >= swingDataPoints.count || indexBegin > indexEnd || (indexEnd - indexBegin + 1) < winLength || winLength <= 0 {
             return nil
         }
         
@@ -137,7 +137,7 @@ class SwingDataPoints {
     }
     
     func searchMultiContinuityWithinRange(_ data: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ thresholdLo: Float, _ thresholdHi: Float, _ winLength: Int) -> Int? {
-        if swingDataPoints.count == 0  || indexBegin < 0 || indexEnd >= swingDataPoints.count || indexBegin > indexEnd || (indexEnd - indexBegin + 1) < winLength {
+        if swingDataPoints.count == 0  || indexBegin < 0 || indexEnd >= swingDataPoints.count || indexBegin > indexEnd || (indexEnd - indexBegin + 1) < winLength || winLength <= 0 || thresholdLo >= thresholdHi {
             return nil
         }
         
