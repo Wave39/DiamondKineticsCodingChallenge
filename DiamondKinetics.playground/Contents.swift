@@ -16,6 +16,44 @@ struct ContinuityRange {
     var endingIndex: Int = 0
 }
 
+enum SearchType {
+    case searchContinuityAboveValue
+    case backSearchContinuityWithinRange
+    case searchContinuityAboveValueTwoSignals
+    case searchMultiContinuityWithinRange
+    case unknown
+}
+
+struct SearchParameters {
+    var searchType: SearchType = .unknown
+    var column1: Int = 0
+    var column2: Int? = nil
+    var indexBegin: Int = 0
+    var indexEnd: Int = 0
+    var threshold1: Float = 0.0
+    var threshold2: Float? = nil
+    var winLength: Int = 0
+    init(_ searchType: SearchType, _ data: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ threshold: Float, _ winLength: Int) {
+        self.searchType = searchType
+        self.column1 = data.rawValue
+        self.indexBegin = indexBegin
+        self.indexEnd = indexEnd
+        self.threshold1 = threshold
+        self.winLength = winLength
+    }
+
+    init(_ searchType: SearchType, _ data1: SensorValue, _ data2: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ threshold1: Float, _ threshold2: Float, _ winLength: Int) {
+        self.searchType = searchType
+        self.column1 = data1.rawValue
+        self.column2 = data2.rawValue
+        self.indexBegin = indexBegin
+        self.indexEnd = indexEnd
+        self.threshold1 = threshold1
+        self.threshold2 = threshold2
+        self.winLength = winLength
+    }
+}
+
 class SwingDataPoint {
     var timestamp: Int = 0
     var sensorData: [Float]
@@ -43,6 +81,16 @@ class SwingDataPoint {
         
         return retval
     }
+    
+    func searchCriteriaMatches(_ searchParameters: SearchParameters) -> Bool {
+        if searchParameters.searchType == .searchContinuityAboveValue {
+            return sensorData[searchParameters.column1] > searchParameters.threshold1
+        } else if searchParameters.searchType == .searchContinuityAboveValueTwoSignals {
+            return sensorData[searchParameters.column1] > searchParameters.threshold1 && sensorData[searchParameters.column2!] > searchParameters.threshold2!
+        }
+        
+        return false
+    }
 }
 
 class SwingDataPoints {
@@ -62,21 +110,66 @@ class SwingDataPoints {
         case notEnoughRecordsToSatisfyWinLength
         case thresholdLoMustBeLessThanThresholdHi
     }
+    
+    func checkSearchParameters(_ searchParameters: SearchParameters) throws {
+        guard swingDataPoints.count > 0 else { throw SearchParameterError.noInputData }
+        guard searchParameters.indexBegin >= 0 else { throw SearchParameterError.invalidIndexBegin }
+        guard searchParameters.indexEnd < swingDataPoints.count else { throw SearchParameterError.invalidIndexEnd }
+        guard searchParameters.winLength > 0 else { throw SearchParameterError.invalidWinLength }
+        guard searchParameters.indexBegin <= searchParameters.indexEnd else { throw SearchParameterError.indexBeginMustBeLessThanOrEqualToIndexEnd }
+        guard (searchParameters.indexEnd - searchParameters.indexBegin + 1) >= searchParameters.winLength else { throw SearchParameterError.notEnoughRecordsToSatisfyWinLength }
+    }
+    
+    func searchGeneric(_ searchParameters: SearchParameters) -> Any? {
+        var retval = -1
+        var matches = 0
+        for index in searchParameters.indexBegin...searchParameters.indexEnd {
+            if swingDataPoints[index].searchCriteriaMatches(searchParameters) {
+                if retval == -1 {
+                    retval = index
+                    matches = 1
+                } else {
+                    matches += 1
+                }
+                
+                if matches == searchParameters.winLength {
+                    return retval
+                }
+            } else {
+                retval = -1
+            }
+        }
 
-   func searchContinuityAboveValue(_ data: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ threshold: Float, _ winLength: Int) throws -> Int? {
+        return nil
+    }
+    
+    func searchContinuityAboveValue(_ data: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ threshold: Float, _ winLength: Int) throws -> Int? {
+        let searchParameters = SearchParameters(.searchContinuityAboveValue, data, indexBegin, indexEnd, threshold, winLength)
+        try checkSearchParameters(searchParameters)
+        return searchGeneric(searchParameters) as? Int
+    }
+    
+    func searchContinuityAboveValueTwoSignals(_ data1: SensorValue, _ data2: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ threshold1: Float, _ threshold2: Float, _ winLength: Int) throws -> Int? {
+        let searchParameters = SearchParameters(.searchContinuityAboveValueTwoSignals, data1, data2, indexBegin, indexEnd, threshold1, threshold2, winLength)
+        try checkSearchParameters(searchParameters)
+        return searchGeneric(searchParameters) as? Int
+    }
+    
+    func searchContinuityAboveValueTwoSignals_old(_ data1: SensorValue, _ data2: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ threshold1: Float, _ threshold2: Float, _ winLength: Int) throws -> Int? {
         guard swingDataPoints.count > 0 else { throw SearchParameterError.noInputData }
         guard indexBegin >= 0 else { throw SearchParameterError.invalidIndexBegin }
         guard indexEnd < swingDataPoints.count else { throw SearchParameterError.invalidIndexEnd }
         guard winLength > 0 else { throw SearchParameterError.invalidWinLength }
         guard indexBegin <= indexEnd else { throw SearchParameterError.indexBeginMustBeLessThanOrEqualToIndexEnd }
         guard (indexEnd - indexBegin + 1) >= winLength else { throw SearchParameterError.notEnoughRecordsToSatisfyWinLength }
-
-        let column = data.rawValue
+        
+        let column1 = data1.rawValue
+        let column2 = data2.rawValue
         var retval = -1
         var matches = 0
         for index in indexBegin...indexEnd {
             let dataPoint = swingDataPoints[index]
-            if dataPoint.sensorData[column] <= threshold {
+            if dataPoint.sensorData[column1] <= threshold1 || dataPoint.sensorData[column2] <= threshold2 {
                 retval = -1
             } else {
                 if retval == -1 {
@@ -91,7 +184,7 @@ class SwingDataPoints {
                 }
             }
         }
-
+        
         return nil
     }
     
@@ -119,39 +212,6 @@ class SwingDataPoints {
                 }
                 
                 retval = index
-                if matches == winLength {
-                    return retval
-                }
-            }
-        }
-        
-        return nil
-    }
-    
-    func searchContinuityAboveValueTwoSignals(_ data1: SensorValue, _ data2: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ threshold1: Float, _ threshold2: Float, _ winLength: Int) throws -> Int? {
-        guard swingDataPoints.count > 0 else { throw SearchParameterError.noInputData }
-        guard indexBegin >= 0 else { throw SearchParameterError.invalidIndexBegin }
-        guard indexEnd < swingDataPoints.count else { throw SearchParameterError.invalidIndexEnd }
-        guard winLength > 0 else { throw SearchParameterError.invalidWinLength }
-        guard indexBegin <= indexEnd else { throw SearchParameterError.indexBeginMustBeLessThanOrEqualToIndexEnd }
-        guard (indexEnd - indexBegin + 1) >= winLength else { throw SearchParameterError.notEnoughRecordsToSatisfyWinLength }
-        
-        let column1 = data1.rawValue
-        let column2 = data2.rawValue
-        var retval = -1
-        var matches = 0
-        for index in indexBegin...indexEnd {
-            let dataPoint = swingDataPoints[index]
-            if dataPoint.sensorData[column1] <= threshold1 || dataPoint.sensorData[column2] <= threshold2 {
-                retval = -1
-            } else {
-                if retval == -1 {
-                    retval = index
-                    matches = 1
-                } else {
-                    matches += 1
-                }
-                
                 if matches == winLength {
                     return retval
                 }
