@@ -11,6 +11,11 @@ enum SensorValue: Int {
     case AcceleratorX = 0, AcceleratorY, AcceleratorZ, GyroscopeX, GyroscopeY, GyroscopeZ
 }
 
+struct ContinuityRange {
+    var startingIndex: Int = 0
+    var endingIndex: Int = 0
+}
+
 class SwingDataPoint {
     var timestamp: Int = 0
     var sensorData: [Float]
@@ -47,10 +52,24 @@ class SwingDataPoints {
         return swingDataPoints.count
     }
     
-    func searchContinuityAboveValue(_ data: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ threshold: Float, _ winLength: Int) -> Int? {
-        if swingDataPoints.count == 0  || indexBegin < 0 || indexEnd >= swingDataPoints.count || indexBegin > indexEnd || (indexEnd - indexBegin + 1) < winLength || winLength <= 0 {
-            return nil
-        }
+    enum SearchParameterError: Error {
+        case noInputData
+        case invalidIndexBegin
+        case invalidIndexEnd
+        case invalidWinLength
+        case indexBeginMustBeLessThanOrEqualToIndexEnd
+        case indexEndMustBeLessThanOrEqualToIndexBegin
+        case notEnoughRecordsToSatisfyWinLength
+        case thresholdLoMustBeLessThanThresholdHi
+    }
+
+   func searchContinuityAboveValue(_ data: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ threshold: Float, _ winLength: Int) throws -> Int? {
+        guard swingDataPoints.count > 0 else { throw SearchParameterError.noInputData }
+        guard indexBegin >= 0 else { throw SearchParameterError.invalidIndexBegin }
+        guard indexEnd < swingDataPoints.count else { throw SearchParameterError.invalidIndexEnd }
+        guard winLength > 0 else { throw SearchParameterError.invalidWinLength }
+        guard indexBegin <= indexEnd else { throw SearchParameterError.indexBeginMustBeLessThanOrEqualToIndexEnd }
+        guard (indexEnd - indexBegin + 1) >= winLength else { throw SearchParameterError.notEnoughRecordsToSatisfyWinLength }
 
         let column = data.rawValue
         var retval = -1
@@ -76,10 +95,14 @@ class SwingDataPoints {
         return nil
     }
     
-    func backSearchContinuityWithinRange(_ data: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ thresholdLo: Float, _ thresholdHi: Float, _ winLength: Int) -> Int? {
-        if swingDataPoints.count == 0  || indexBegin < 0 || indexEnd >= swingDataPoints.count || indexBegin <= indexEnd || (indexBegin - indexEnd + 1) < winLength || winLength <= 0 || thresholdLo >= thresholdHi {
-            return nil
-        }
+    func backSearchContinuityWithinRange(_ data: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ thresholdLo: Float, _ thresholdHi: Float, _ winLength: Int) throws -> Int? {
+        guard swingDataPoints.count > 0 else { throw SearchParameterError.noInputData }
+        guard indexBegin >= 0 else { throw SearchParameterError.invalidIndexBegin }
+        guard indexEnd < swingDataPoints.count else { throw SearchParameterError.invalidIndexEnd }
+        guard winLength > 0 else { throw SearchParameterError.invalidWinLength }
+        guard indexEnd <= indexBegin else { throw SearchParameterError.indexEndMustBeLessThanOrEqualToIndexBegin }
+        guard (indexBegin - indexEnd + 1) >= winLength else { throw SearchParameterError.notEnoughRecordsToSatisfyWinLength }
+        guard thresholdLo < thresholdHi else { throw SearchParameterError.thresholdLoMustBeLessThanThresholdHi }
         
         let column = data.rawValue
         var retval = -1
@@ -105,10 +128,13 @@ class SwingDataPoints {
         return nil
     }
     
-    func searchContinuityAboveValueTwoSignals(_ data1: SensorValue, _ data2: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ threshold1: Float, _ threshold2: Float, _ winLength: Int) -> Int? {
-        if swingDataPoints.count == 0  || indexBegin < 0 || indexEnd >= swingDataPoints.count || indexBegin > indexEnd || (indexEnd - indexBegin + 1) < winLength || winLength <= 0 {
-            return nil
-        }
+    func searchContinuityAboveValueTwoSignals(_ data1: SensorValue, _ data2: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ threshold1: Float, _ threshold2: Float, _ winLength: Int) throws -> Int? {
+        guard swingDataPoints.count > 0 else { throw SearchParameterError.noInputData }
+        guard indexBegin >= 0 else { throw SearchParameterError.invalidIndexBegin }
+        guard indexEnd < swingDataPoints.count else { throw SearchParameterError.invalidIndexEnd }
+        guard winLength > 0 else { throw SearchParameterError.invalidWinLength }
+        guard indexBegin <= indexEnd else { throw SearchParameterError.indexBeginMustBeLessThanOrEqualToIndexEnd }
+        guard (indexEnd - indexBegin + 1) >= winLength else { throw SearchParameterError.notEnoughRecordsToSatisfyWinLength }
         
         let column1 = data1.rawValue
         let column2 = data2.rawValue
@@ -118,7 +144,6 @@ class SwingDataPoints {
             let dataPoint = swingDataPoints[index]
             if dataPoint.sensorData[column1] <= threshold1 || dataPoint.sensorData[column2] <= threshold2 {
                 retval = -1
-                matches = 0
             } else {
                 if retval == -1 {
                     retval = index
@@ -136,15 +161,21 @@ class SwingDataPoints {
         return nil
     }
     
-    func searchMultiContinuityWithinRange(_ data: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ thresholdLo: Float, _ thresholdHi: Float, _ winLength: Int) -> Int? {
-        if swingDataPoints.count == 0  || indexBegin < 0 || indexEnd >= swingDataPoints.count || indexBegin > indexEnd || (indexEnd - indexBegin + 1) < winLength || winLength <= 0 || thresholdLo >= thresholdHi {
-            return nil
-        }
+    func searchMultiContinuityWithinRange(_ data: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ thresholdLo: Float, _ thresholdHi: Float, _ winLength: Int, _ includeOverlappingRanges: Bool = false) throws -> [ContinuityRange] {
+        guard swingDataPoints.count > 0 else { throw SearchParameterError.noInputData }
+        guard indexBegin >= 0 else { throw SearchParameterError.invalidIndexBegin }
+        guard indexEnd < swingDataPoints.count else { throw SearchParameterError.invalidIndexEnd }
+        guard winLength > 0 else { throw SearchParameterError.invalidWinLength }
+        guard indexBegin <= indexEnd else { throw SearchParameterError.indexBeginMustBeLessThanOrEqualToIndexEnd }
+        guard (indexEnd - indexBegin + 1) >= winLength else { throw SearchParameterError.notEnoughRecordsToSatisfyWinLength }
+        guard thresholdLo < thresholdHi else { throw SearchParameterError.thresholdLoMustBeLessThanThresholdHi }
         
+        var ranges: [ContinuityRange] = []
         let column = data.rawValue
         var retval = -1
         var matches = 0
-        for index in indexBegin...indexEnd {
+        var index = indexBegin
+        while index <= indexEnd {
             let dataPoint = swingDataPoints[index]
             if dataPoint.sensorData[column] <= thresholdLo || dataPoint.sensorData[column] >= thresholdHi {
                 retval = -1
@@ -157,22 +188,29 @@ class SwingDataPoints {
                 }
                 
                 if matches == winLength {
-                    return retval
+                    ranges.append(ContinuityRange(startingIndex: retval, endingIndex: index))
+                    if (includeOverlappingRanges) {
+                        index = retval
+                    }
+                    
+                    retval = -1
                 }
             }
+            
+            index += 1
         }
         
-        return nil
+        return ranges
     }
-}
-
-func createSwingDataPoints(_ data: String) -> SwingDataPoints {
-    let retval = SwingDataPoints()
-    let csvLines = data.split(separator: "\n")
-    for line in csvLines {
-        retval.swingDataPoints.append(SwingDataPoint.createFromCSVString(String(line)))
+    
+    static func createFromCSVLines(_ data: String) -> SwingDataPoints {
+        let retval = SwingDataPoints()
+        let csvLines = data.split(separator: "\n")
+        for line in csvLines {
+            retval.swingDataPoints.append(SwingDataPoint.createFromCSVString(String(line)))
+        }
+        return retval
     }
-    return retval
 }
 
 let smallDataString = """
@@ -202,26 +240,37 @@ let smallDataString = """
 24,0.914,0.558,0.263,-0.588,-0.18,0.964
 25,0.799,-0.345,0.256,-0.802,-0.577,-0.153
 """
-let smallData = createSwingDataPoints(smallDataString)
-smallData.searchContinuityAboveValue(.AcceleratorX, 0, smallData.count() - 1, 0.0, 2) // 9
-smallData.searchContinuityAboveValue(.AcceleratorX, 0, smallData.count() - 1, 0.0, 3) // nil
-smallData.searchContinuityAboveValue(.AcceleratorY, 0, smallData.count() - 1, 0.0, 3) // 5
-smallData.searchContinuityAboveValue(.AcceleratorY, 0, smallData.count() - 1, 0.0, 4) // nil
-smallData.searchContinuityAboveValue(.AcceleratorY, 0, smallData.count() - 1, -1.0, 25) // 0
-smallData.searchContinuityAboveValue(.AcceleratorY, 0, 10, -1.0, 25) // nil
+let smallData = SwingDataPoints.createFromCSVLines(smallDataString)
+try smallData.searchContinuityAboveValue(.AcceleratorX, 0, smallData.count() - 1, 0.0, 2) // 9
+try smallData.searchContinuityAboveValue(.AcceleratorX, 0, smallData.count() - 1, 0.0, 3) // nil
+try smallData.searchContinuityAboveValue(.AcceleratorY, 0, smallData.count() - 1, 0.0, 3) // 5
+try smallData.searchContinuityAboveValue(.AcceleratorY, 0, smallData.count() - 1, 0.0, 4) // nil
+try smallData.searchContinuityAboveValue(.AcceleratorY, 0, smallData.count() - 1, -1.0, 25) // 0
+do {
+    try smallData.searchContinuityAboveValue(.AcceleratorY, -1, 10, -1.0, 25) // error
+} catch SwingDataPoints.SearchParameterError.invalidIndexBegin {
+    print ("The expected error occurred")
+}
+do {
+    try smallData.searchContinuityAboveValue(.AcceleratorY, 0, 10, -1.0, 25) // error
+} catch SwingDataPoints.SearchParameterError.notEnoughRecordsToSatisfyWinLength {
+    print ("The expected error occurred")
+}
 
-smallData.backSearchContinuityWithinRange(.AcceleratorX, smallData.count() - 1, 0, 0.0, 1.0, 1) // 24
-smallData.backSearchContinuityWithinRange(.AcceleratorY, smallData.count() - 1, 0, 0.0, 1.0, 1) // 23
-smallData.backSearchContinuityWithinRange(.GyroscopeZ, smallData.count() - 1, 0, 0.0, 1.0, 5) // 15
-smallData.backSearchContinuityWithinRange(.GyroscopeZ, smallData.count() - 1, 0, 0.0, 1.0, 6) // nil
+try smallData.backSearchContinuityWithinRange(.AcceleratorX, smallData.count() - 1, 0, 0.0, 1.0, 1) // 24
+try smallData.backSearchContinuityWithinRange(.AcceleratorY, smallData.count() - 1, 0, 0.0, 1.0, 1) // 23
+try smallData.backSearchContinuityWithinRange(.GyroscopeZ, smallData.count() - 1, 0, 0.0, 1.0, 5) // 15
+try smallData.backSearchContinuityWithinRange(.GyroscopeZ, smallData.count() - 1, 0, 0.0, 1.0, 6) // nil
 
-smallData.searchContinuityAboveValueTwoSignals(.AcceleratorX, .AcceleratorY, 0, smallData.count() - 1, 0.0, 0.0, 1) // 7
-smallData.searchContinuityAboveValueTwoSignals(.AcceleratorX, .AcceleratorY, 0, smallData.count() - 1, 0.0, 0.0, 2) // nil
-smallData.searchContinuityAboveValueTwoSignals(.AcceleratorX, .AcceleratorY, 0, smallData.count() - 1, -0.5, 0.0, 2) // 5
+try smallData.searchContinuityAboveValueTwoSignals(.AcceleratorX, .AcceleratorY, 0, smallData.count() - 1, 0.0, 0.0, 1) // 7
+try smallData.searchContinuityAboveValueTwoSignals(.AcceleratorX, .AcceleratorY, 0, smallData.count() - 1, 0.0, 0.0, 2) // nil
+try smallData.searchContinuityAboveValueTwoSignals(.AcceleratorX, .AcceleratorY, 0, smallData.count() - 1, -0.5, 0.0, 2) // 5
 
-smallData.searchMultiContinuityWithinRange(.AcceleratorY, 0, smallData.count() - 1, 0.5, 1.0, 1) // 21
-smallData.searchMultiContinuityWithinRange(.AcceleratorZ, 0, smallData.count() - 1, 0.0, 1.0, 3) // 19
-smallData.searchMultiContinuityWithinRange(.AcceleratorZ, 0, smallData.count() - 1, 0.0, 1.0, 7) // nil
+try smallData.searchMultiContinuityWithinRange(.AcceleratorY, 0, smallData.count() - 1, 0.5, 1.0, 1) // [21, 21], [23, 23]
+try smallData.searchMultiContinuityWithinRange(.AcceleratorZ, 0, smallData.count() - 1, 0.0, 1.0, 3) // [19, 21], [22, 24]
+try smallData.searchMultiContinuityWithinRange(.AcceleratorZ, 0, smallData.count() - 1, 0.0, 1.0, 7) // []
+try smallData.searchMultiContinuityWithinRange(.AcceleratorZ, 0, 9, -1.0, 1.0, 5) // 2 records
+try smallData.searchMultiContinuityWithinRange(.AcceleratorZ, 0, 9, -1.0, 1.0, 5, true) // 6 records
 
 let diamondKineticsDataString = """
 0,-1.163086,0.238281,-1.051758,4.81493,-15.695393,-6.593897
@@ -1501,8 +1550,8 @@ let diamondKineticsDataString = """
 1590818,-0.12207,0.756836,-0.047852,5.215464,-1.391217,-9.350765
 1592068,-0.126953,0.776367,-0.05957,5.209073,-1.340084,-9.450898
 """
-let diamondKineticsData = createSwingDataPoints(diamondKineticsDataString)
-diamondKineticsData.searchContinuityAboveValue(.AcceleratorX, 0, diamondKineticsData.count() - 1, 0.0, 2) // 20
+let diamondKineticsData = SwingDataPoints.createFromCSVLines(diamondKineticsDataString)
+try diamondKineticsData.searchContinuityAboveValue(.AcceleratorX, 0, diamondKineticsData.count() - 1, 0.0, 2) // 20
 
 // My guess is that contact is at around index 874, timestamp 1091349, as that is when the change in accelerometer and gyroscope really peak
 var aDelta: Float = 0.0
