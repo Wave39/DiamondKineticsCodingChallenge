@@ -69,6 +69,7 @@ struct SearchParameters {
         self.winLength = winLength
     }
 }
+
 class SwingDataPoint {
     var timestamp: Int = 0
     var sensorData: [Float]
@@ -98,22 +99,26 @@ class SwingDataPoint {
     }
 }
 
+// block to check to see if column1 is greater than threshold1
 let sensorDataGreaterThanThreshold:(SearchParameters, SwingDataPoint) -> Bool = { params, point in
     return point.sensorData[params.column1] > params.threshold1
 }
 
+// block to check to see if column1 is greater than threshold1 and column2 is greater than threshold2
 let sensorDataGreaterThanTwoThresholds:(SearchParameters, SwingDataPoint) -> Bool = { params, point in
     return point.sensorData[params.column1] > params.threshold1 && point.sensorData[params.column2] > params.threshold2
 }
 
+// block to check to see if column1 is greater than threshold1 and less than threshold2
 let sensorDataBetweenTwoThresholds:(SearchParameters, SwingDataPoint) -> Bool = { params, point in
     return point.sensorData[params.column1] > params.threshold1 && point.sensorData[params.column1] < params.threshold2
 }
 
+// block to update the status variables while moving forward through the data set
 let forwardStatusUpdate:(SearchParameters, MatchingStatus, Int) -> MatchingStatus = { params, status, idx in
     var statusToReturn = status
     if status.matchingIndex == -1 {
-        statusToReturn.matchingIndex = idx
+        statusToReturn.matchingIndex = idx  // different from below
         statusToReturn.matchingCount = 1
     } else {
         statusToReturn.matchingCount += 1
@@ -126,6 +131,7 @@ let forwardStatusUpdate:(SearchParameters, MatchingStatus, Int) -> MatchingStatu
     return statusToReturn
 }
 
+// block to update the status variables while moving backward through the data set
 let backwardStatusUpdate:(SearchParameters, MatchingStatus, Int) -> MatchingStatus = { params, status, idx in
     var statusToReturn = status
     if status.matchingIndex == -1 {
@@ -134,7 +140,7 @@ let backwardStatusUpdate:(SearchParameters, MatchingStatus, Int) -> MatchingStat
         statusToReturn.matchingCount += 1
     }
     
-    statusToReturn.matchingIndex = idx
+    statusToReturn.matchingIndex = idx  // different from above
     
     if statusToReturn.matchingCount == params.winLength {
         statusToReturn.indexToReturn = statusToReturn.matchingIndex
@@ -179,14 +185,16 @@ class SwingDataPoints {
     func searchGeneric(_ searchParameters: SearchParameters) -> Any? {
         var matchFunction:(SearchParameters, SwingDataPoint) -> Bool = sensorDataGreaterThanThreshold
         var updateStatusFunction: (SearchParameters, MatchingStatus, Int) -> MatchingStatus = forwardStatusUpdate
+        var strideBy = +1
         if searchParameters.searchType == .searchContinuityAboveValueTwoSignals {
             matchFunction = sensorDataGreaterThanTwoThresholds
         } else if searchParameters.searchType == .backSearchContinuityWithinRange {
             updateStatusFunction = backwardStatusUpdate
+            strideBy = -1
         }
         
         var status = MatchingStatus()
-        for index in searchParameters.indexBegin...searchParameters.indexEnd {
+        for index in stride(from: searchParameters.indexBegin, through: searchParameters.indexEnd, by: strideBy) {
             if matchFunction(searchParameters, swingDataPoints[index]) {
                 status = updateStatusFunction(searchParameters, status, index)
                 if status.indexToReturn != nil {
@@ -216,24 +224,9 @@ class SwingDataPoints {
     func backSearchContinuityWithinRange(_ data: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ thresholdLo: Float, _ thresholdHi: Float, _ winLength: Int) throws -> Int? {
         let searchParameters = SearchParameters(.backSearchContinuityWithinRange, data, indexBegin, indexEnd, thresholdLo, thresholdHi, winLength)
         try checkSearchParameters(searchParameters)
-        let matchFunction:(SearchParameters, SwingDataPoint) -> Bool = sensorDataBetweenTwoThresholds
-        let updateStatusFunction: (SearchParameters, MatchingStatus, Int) -> MatchingStatus = backwardStatusUpdate
-        var status = MatchingStatus()
-        for index in stride(from: indexBegin, through: indexEnd, by: -1) {
-            if matchFunction(searchParameters, swingDataPoints[index]) {
-                status = updateStatusFunction(searchParameters, status, index)
-                if status.indexToReturn != nil {
-                    return status.indexToReturn!
-                }
-            } else {
-                status.matchingIndex = -1
-                status.matchingCount = 0
-            }
-        }
-        
-        return nil
+        return searchGeneric(searchParameters) as? Int
     }
-    
+
     func searchMultiContinuityWithinRange(_ data: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ thresholdLo: Float, _ thresholdHi: Float, _ winLength: Int, _ includeOverlappingRanges: Bool = false) throws -> [ContinuityRange] {
         let searchParameters = SearchParameters(.searchMultiContinuityWithinRange, data, indexBegin, indexEnd, thresholdLo, thresholdHi, winLength)
         try checkSearchParameters(searchParameters)
