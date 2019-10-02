@@ -1,14 +1,12 @@
 // Diamond Kinetics - Swing Data Coding Challenge
 // by Brian Prescott (bprescot@columbus.rr.com)
 
-// Design notes:
-// The specs did not specify what to do if the search criteria was not met, so all search functions return an optional Int,
-//     where the return value is nil if the criteria is not met or an illegal condition is passed in, such as indices being out of bounds.
-// The 4 search functions could have been consolidated down, as they are somewhat similar. However, this would have introduced delays in
-//     processing, as there would be additional if statements in a generalized function that did the work of 2 or more of the search functions.
-
 enum SensorValue: Int {
     case AcceleratorX = 0, AcceleratorY, AcceleratorZ, GyroscopeX, GyroscopeY, GyroscopeZ
+}
+
+enum DataDirection: Int {
+    case Forward = 1, Backward = -1
 }
 
 struct ContinuityRange {
@@ -20,6 +18,7 @@ struct MatchingStatus {
     var matchingIndex: Int = -1
     var matchingCount: Int = 0
     var indexToReturn: Int? = nil
+    var continuityRangeToAppend: ContinuityRange? = nil
 }
 
 enum SearchType {
@@ -152,6 +151,26 @@ let backwardStatusUpdate:StatusUpdateFunction = { params, status, idx in
     return statusToReturn
 }
 
+// block to update the status variables while moving forward through the data set
+// this block sets a ContinuityRange to be appended if the matching count is reached
+let forwardStatusUpdateWithContinuityRange:StatusUpdateFunction = { params, status, idx in
+    var statusToReturn = status
+    if status.matchingIndex == -1 {
+        statusToReturn.matchingIndex = idx
+        statusToReturn.matchingCount = 1
+    } else {
+        statusToReturn.matchingCount += 1
+    }
+    
+    if statusToReturn.matchingCount == params.winLength {
+        statusToReturn.continuityRangeToAppend = ContinuityRange(startingIndex: statusToReturn.matchingIndex, endingIndex: idx)
+        statusToReturn.matchingIndex = -1
+        statusToReturn.matchingCount = 0
+    }
+    
+    return statusToReturn
+}
+
 class SwingDataPoints {
     var swingDataPoints: [SwingDataPoint] = []
     
@@ -185,18 +204,20 @@ class SwingDataPoints {
         }
     }
     
-    func searchGeneric(_ searchParameters: SearchParameters, _ matchFunction: SearchFunction, _ updateStatusFunction: StatusUpdateFunction) -> Any? {
-        var strideBy = +1
-        if searchParameters.searchType == .backSearchContinuityWithinRange {
-            strideBy = -1
-        }
-        
+    func searchGeneric(_ searchParameters: SearchParameters,_ dataDirection: DataDirection, _ matchFunction: SearchFunction, _ updateStatusFunction: StatusUpdateFunction) -> Any? {
+        var continuityRanges: [ContinuityRange] = []
         var status = MatchingStatus()
-        for index in stride(from: searchParameters.indexBegin, through: searchParameters.indexEnd, by: strideBy) {
+        for index in stride(from: searchParameters.indexBegin, through: searchParameters.indexEnd, by: dataDirection.rawValue) {
             if matchFunction(searchParameters, swingDataPoints[index]) {
                 status = updateStatusFunction(searchParameters, status, index)
                 if status.indexToReturn != nil {
                     return status.indexToReturn!
+                }
+                
+                if status.continuityRangeToAppend != nil {
+                    continuityRanges.append(status.continuityRangeToAppend!)
+                    status.continuityRangeToAppend = nil
+                    status.matchingIndex = -1
                 }
             } else {
                 status.matchingIndex = -1
@@ -204,59 +225,40 @@ class SwingDataPoints {
             }
         }
 
+        if continuityRanges.count > 0 {
+            return continuityRanges
+        }
+        
         return nil
     }
     
     func searchContinuityAboveValue(_ data: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ threshold: Float, _ winLength: Int) throws -> Int? {
         let searchParameters = SearchParameters(.searchContinuityAboveValue, data, indexBegin, indexEnd, threshold, winLength)
         try checkSearchParameters(searchParameters)
-        return searchGeneric(searchParameters, sensorDataGreaterThanThreshold, forwardStatusUpdate) as? Int
+        return searchGeneric(searchParameters, .Forward, sensorDataGreaterThanThreshold, forwardStatusUpdate) as? Int
     }
     
     func searchContinuityAboveValueTwoSignals(_ data1: SensorValue, _ data2: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ threshold1: Float, _ threshold2: Float, _ winLength: Int) throws -> Int? {
         let searchParameters = SearchParameters(.searchContinuityAboveValueTwoSignals, data1, data2, indexBegin, indexEnd, threshold1, threshold2, winLength)
         try checkSearchParameters(searchParameters)
-        return searchGeneric(searchParameters, sensorDataGreaterThanTwoThresholds, forwardStatusUpdate) as? Int
+        return searchGeneric(searchParameters, .Forward, sensorDataGreaterThanTwoThresholds, forwardStatusUpdate) as? Int
     }
     
     func backSearchContinuityWithinRange(_ data: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ thresholdLo: Float, _ thresholdHi: Float, _ winLength: Int) throws -> Int? {
         let searchParameters = SearchParameters(.backSearchContinuityWithinRange, data, indexBegin, indexEnd, thresholdLo, thresholdHi, winLength)
         try checkSearchParameters(searchParameters)
-        return searchGeneric(searchParameters, sensorDataGreaterThanThreshold, backwardStatusUpdate) as? Int
+        return searchGeneric(searchParameters, .Backward, sensorDataGreaterThanThreshold, backwardStatusUpdate) as? Int
     }
 
-    func searchMultiContinuityWithinRange(_ data: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ thresholdLo: Float, _ thresholdHi: Float, _ winLength: Int, _ includeOverlappingRanges: Bool = false) throws -> [ContinuityRange] {
+    func searchMultiContinuityWithinRange(_ data: SensorValue, _ indexBegin: Int, _ indexEnd: Int, _ thresholdLo: Float, _ thresholdHi: Float, _ winLength: Int) throws -> [ContinuityRange] {
         let searchParameters = SearchParameters(.searchMultiContinuityWithinRange, data, indexBegin, indexEnd, thresholdLo, thresholdHi, winLength)
         try checkSearchParameters(searchParameters)
-        let matchFunction:SearchFunction = sensorDataBetweenTwoThresholds
-        var ranges: [ContinuityRange] = []
-        var status = MatchingStatus()
-        var index = indexBegin
-        while index <= indexEnd {
-            if matchFunction(searchParameters, swingDataPoints[index]) {
-                if status.matchingIndex == -1 {
-                    status.matchingIndex = index
-                    status.matchingCount = 1
-                } else {
-                    status.matchingCount += 1
-                }
-                
-                if status.matchingCount == winLength {
-                    ranges.append(ContinuityRange(startingIndex: status.matchingIndex, endingIndex: index))
-                    if (includeOverlappingRanges) {
-                        index = status.matchingIndex
-                    }
-                    
-                    status.matchingIndex = -1
-                }
-            } else {
-                status.matchingIndex = -1
-            }
-            
-            index += 1
+        let retval = searchGeneric(searchParameters, .Forward, sensorDataBetweenTwoThresholds, forwardStatusUpdateWithContinuityRange)
+        if retval == nil {
+            return []
+        } else {
+            return (retval as? [ContinuityRange])!
         }
-        
-        return ranges
     }
     
     static func createFromCSVLines(_ data: String) -> SwingDataPoints {
@@ -326,7 +328,6 @@ try smallData.searchMultiContinuityWithinRange(.AcceleratorY, 0, smallData.count
 try smallData.searchMultiContinuityWithinRange(.AcceleratorZ, 0, smallData.count() - 1, 0.0, 1.0, 3) // [19, 21], [22, 24]
 try smallData.searchMultiContinuityWithinRange(.AcceleratorZ, 0, smallData.count() - 1, 0.0, 1.0, 7) // []
 try smallData.searchMultiContinuityWithinRange(.AcceleratorZ, 0, 9, -1.0, 1.0, 5) // 2 records
-try smallData.searchMultiContinuityWithinRange(.AcceleratorZ, 0, 9, -1.0, 1.0, 5, true) // 6 records
 
 let diamondKineticsDataString = """
 0,-1.163086,0.238281,-1.051758,4.81493,-15.695393,-6.593897
